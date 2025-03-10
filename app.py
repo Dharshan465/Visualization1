@@ -16,15 +16,23 @@ def determine_pass_fail(df):
     return student_pass_fail
 
 # Fail Categories
+# Fail Categories
 def categorize_failures(df):
     fail_df = df[df["GRADE"] == "U"].copy()
-    fail_df["Fail Type"] = "Attempted"  # Updated label
 
-    fail_df.loc[fail_df["ESEM"] == "P", "Fail Type"] = "Prevention"
-    fail_df.loc[fail_df["ESEM"] == "M", "Fail Type"] = "Malpractice"
-    fail_df.loc[fail_df["ESEM"] == "A", "Fail Type"] = "Absent"
+    # Ensure ESEM is treated as a string (to avoid NaN issues)
+    fail_df["ESEM"] = fail_df["ESEM"].astype(str).str.strip().str.upper()
+
+    # Assign fail categories directly based on ESEM values
+    fail_df["Fail Type"] = fail_df["ESEM"].map({
+        "P": "Prevention",
+        "M": "Malpractice",
+        "A": "Absent"
+    }).fillna("Attempted")  # Default to "Attempted" if not P, M, or A
 
     return fail_df
+
+
 
 # Grade Distribution
 def grade_distribution(df):
@@ -71,13 +79,18 @@ def pass_fail_chart(df):
 
 # Chart: Fail Categories
 def fail_categories_chart(df):
-    fail_categories = df["Fail Type"].value_counts().reset_index()
+    # Define all possible categories
+    fail_types = ["Prevention", "Malpractice", "Absent", "Attempted"]
+
+    # Count fail types
+    fail_categories = df["Fail Type"].value_counts().reindex(fail_types, fill_value=0).reset_index()
     fail_categories.columns = ["Category", "Count"]
 
+    # Create the chart
     chart = alt.Chart(fail_categories).mark_bar().encode(
-        x=alt.X("Category:N", title="Fail Category"),
+        x=alt.X("Category:N", title="Fail Category", sort=fail_types),
         y=alt.Y("Count:Q", title="Number of Students"),
-        color="Category:N",
+        color=alt.Color("Category:N"),
         tooltip=["Category", "Count"]
     ).properties(title="Fail Categories Breakdown")
 
@@ -134,6 +147,12 @@ def grade_distribution_chart(df):
     return (chart + text)
 
 
+DEPT_PREFIX = {
+    "Aerospace": "AE", "Automobile": "AU", "Electronics Comm": "EC", "Artificial Intelligence": "AZ",
+    "Information Tech": "IT", "Inst Eng": "EI", "Mech": "ME", "Production": "PR", 
+    "Robotics": "RO", "Rubber and Plastics": "RP"
+}
+
 # Streamlit UI
 st.title("Student Performance Analysis")
 
@@ -142,16 +161,38 @@ uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 if uploaded_file:
     df = load_data(uploaded_file)
 
-    # Dropdown to choose stage
-    stage = st.selectbox("Select Data Stage", ["Overall", "5", "7"])
+    # Dropdowns
+    department_options = ["Overall", "Others (Open Elective)"] + sorted(df["DEPNAME"].unique())
+    selected_department = st.selectbox("Select Department", department_options)
 
-    # Filter Data Based on Selection
-    if stage == "5":
-        df = df[df["SEM"] == 5]
-    elif stage == "7":
-        df = df[df["SEM"] == 7]
+    if selected_department == "Others (Open Elective)":
+        selected_branch = "All"  # Hide branch selection
+        all_prefixes = tuple(DEPT_PREFIX.values())  # Get all department prefixes
+        df = df[~df["SUBCODE"].str.startswith(all_prefixes)]
+        subject_list = sorted(df["SUBCODE"].unique())  # Subjects only from Open Electives
+    else:
+        selected_branch = st.selectbox("Select Branch", ["All"] + sorted(df[df["DEPNAME"] == selected_department]["BRNAME"].unique())) if selected_department != "Overall" else "All"
 
-    # Process Data
+        if selected_department != "Overall":
+            df = df[df["DEPNAME"] == selected_department]
+
+        if selected_branch != "All":
+            df = df[df["BRNAME"] == selected_branch]
+
+        subject_list = sorted(df["SUBCODE"].unique())
+
+    selected_semester = st.selectbox("Select Semester", ["All", "5", "7"])
+
+    if selected_semester != "All":
+        df = df[df["SEM"] == int(selected_semester)]
+
+    selected_subject = st.selectbox("Select Subject", ["All"] + subject_list)
+
+    if selected_subject != "All":
+        df = df[df["SUBCODE"] == selected_subject]
+
+
+    # Generate Data for Charts
     pass_fail_df = determine_pass_fail(df)
     fail_df = categorize_failures(df)
     avg_marks_df = avg_marks(df)
@@ -168,8 +209,10 @@ if uploaded_file:
     st.subheader("3. Average Marks")
     st.altair_chart(avg_marks_chart(avg_marks_df), use_container_width=True)
 
-    st.subheader("4. Subjects Failed Per Student")
-    st.altair_chart(subjects_failed_chart(subjects_failed_df), use_container_width=True)
+    # Only show "Subjects Failed" if a subject is NOT selected
+    if selected_subject == "All":
+        st.subheader("4. Subjects Failed Per Student")
+        st.altair_chart(subjects_failed_chart(subjects_failed_df), use_container_width=True)
 
     st.subheader("5. Grade Distribution")
     st.altair_chart(grade_distribution_chart(grade_dist_df), use_container_width=True)
