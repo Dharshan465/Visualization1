@@ -43,18 +43,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Function to encode images as Base64 for inline display
-def encode_image(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
 
-# Paths to images (update these paths)
-mit_logo_path = "C:/Users/Dharshan.S/Desktop/mit_logo.png"
-anna_logo_path = "C:/Users/Dharshan.S/Desktop/anna_logo_grey.png"
 
-# Convert images to Base64
-mit_logo_base64 = encode_image(mit_logo_path)
-anna_logo_base64 = encode_image(anna_logo_path)
+
+
 
 # Display Header
 st.markdown(f"""
