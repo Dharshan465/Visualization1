@@ -1,11 +1,75 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import streamlit as st
+import base64
+st.set_page_config(layout="wide")
+
+# Set page layout (only for header and footer styling)
+st.markdown("""
+    <style>
+        /* Header */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background-color: #f5f5f5;
+            border-bottom: 2px solid #ddd;
+            width: 100%;
+        }
+        .header-logo {
+            height: 50px;
+        }
+        .header-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            flex-grow: 1;
+        }
+
+        /* Footer */
+        .footer-container {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background-color: #f5f5f5;
+            text-align: center;
+            padding: 8px;
+            font-size: 14px;
+            border-top: 2px solid #ddd;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# Function to encode images as Base64 for inline display
+def encode_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
+# Paths to images (update these paths)
+mit_logo_path = "C:/Users/Dharshan.S/Desktop/mit_logo.png"
+anna_logo_path = "C:/Users/Dharshan.S/Desktop/anna_logo_grey.png"
+
+# Convert images to Base64
+mit_logo_base64 = encode_image(mit_logo_path)
+anna_logo_base64 = encode_image(anna_logo_path)
+
+# Display Header
+st.markdown(f"""
+    <div class="header-container">
+        <img class="header-logo" src="data:image/png;base64,{mit_logo_base64}" alt="MIT Logo">
+        <div class="header-title">MADRAS INSTITUTE OF TECHNOLOGY</div>
+        <img class="header-logo" src="data:image/png;base64,{anna_logo_base64}" alt="Anna University Logo">
+    </div>
+""", unsafe_allow_html=True)
+
 
 # Load Data
 @st.cache_data
 def load_data(uploaded_file):
-    df = pd.read_excel(uploaded_file, sheet_name="UG")  # Ensure UG sheet is loaded
+    df = pd.read_excel(uploaded_file, sheet_name="UG") 
     return df
 
 # Pass/Fail Logic
@@ -48,11 +112,36 @@ def subjects_failed(df):
     return fail_counts
 
 # Average Marks Calculation
+import pandas as pd
+
 def avg_marks(df):
     df[["SESMARK", "ESEM", "TOTMARK"]] = df[["SESMARK", "ESEM", "TOTMARK"]].apply(pd.to_numeric, errors="coerce")
-    avg_data = df[["SESMARK", "ESEM", "TOTMARK"]].mean().reset_index()
-    avg_data.columns = ["Mark Type", "Average Marks"]
+
+    # ✅ Compute subcategory averages for SESMARK
+    internal_avg = df.groupby("SUBTYPE")["SESMARK"].mean().reset_index()
+    internal_avg["Mark Type"] = "SESMARK"  # Label as Internal
+    internal_avg.rename(columns={"SESMARK": "Average Marks"}, inplace=True)
+
+    # ✅ Map SUBTYPE to readable labels (Added "O" for Open Elective)
+    subcategory_labels = {
+        "T": "Theory (40)",
+        "P": "Practical/Project (60)",
+        "L": "Lab (60)",
+        "S": "Single (100)",
+        "O": "Other/Open Elective"
+    }
+    internal_avg["Subcategory"] = internal_avg["SUBTYPE"].map(subcategory_labels)
+
+    # ✅ Compute ESEM & TOTMARK averages
+    external_tot_avg = df[["ESEM", "TOTMARK"]].mean().reset_index()
+    external_tot_avg.columns = ["Mark Type", "Average Marks"]
+    external_tot_avg["Subcategory"] = external_tot_avg["Mark Type"].map({"ESEM": "External", "TOTMARK": "Total"})
+
+    # ✅ Merge both datasets
+    avg_data = pd.concat([internal_avg[["Mark Type", "Average Marks", "Subcategory"]], external_tot_avg], ignore_index=True)
+
     return avg_data
+
 
 # Chart: Pass/Fail Count
 # Chart: Pass/Fail Count
@@ -98,23 +187,58 @@ def fail_categories_chart(df):
 
     return (chart + text)
 
-# Chart: Average Marks
+import altair as alt
+
 def avg_marks_chart(df):
-    # Enforce correct order
+    # ✅ Ensure correct order for Mark Type
     order = ["SESMARK", "ESEM", "TOTMARK"]
     df["Mark Type"] = pd.Categorical(df["Mark Type"], categories=order, ordered=True)
 
-    chart = alt.Chart(df.sort_values("Mark Type")).mark_bar().encode(
-        x=alt.X("Mark Type:N", title="Mark Type", 
-                axis=alt.Axis(labelExpr="datum.value == 'SESMARK' ? 'Internal' : datum.value == 'ESEM' ? 'External' : 'Total'")),
+    # ✅ Handle SESMARK subcategories, but keep ESEM and TOTMARK as single bars
+    df["Subcategory"] = df.apply(
+        lambda row: row["Subcategory"] if row["Mark Type"] == "SESMARK" else row["Mark Type"], axis=1
+    )
+
+    # ✅ Define color mapping (including "O" for Open Elective)
+    color_mapping = {
+        "ESEM": "orange",
+        "Theory (40)": "blue",
+        "Practical/Project (60)": "lightblue",
+        "Lab (60)": "cyan",
+        "Single (100)": "darkblue",
+        "Other/Open Elective": "purple",  # Added for "O"
+        "TOTMARK": "green"
+    }
+
+    # ✅ Ensure correct order: External → Internal (All Subcategories) → Total
+    category_order = ["ESEM", "Theory (40)", "Practical/Project (60)", "Lab (60)", "Single (100)", "Other/Open Elective", "TOTMARK"]
+
+    # ✅ Remove null/missing subcategories to prevent blank x-axis labels
+    df = df[df["Subcategory"].notna() & df["Subcategory"].isin(category_order)]
+
+    # ✅ Base chart
+    base_chart = alt.Chart(df.sort_values(["Mark Type", "Subcategory"])).encode(
+        x=alt.X("Subcategory:N", title="", sort=category_order),  # ✅ Show category names under bars
         y=alt.Y("Average Marks:Q", title="Average Marks"),
-        color=alt.Color("Mark Type:N", scale=alt.Scale(domain=order, range=["blue", "orange", "green"])),
-        tooltip=["Mark Type", "Average Marks"]
-    ).properties(title="Overall Average Marks (Internal, External, Total)")
+        color=alt.Color("Subcategory:N", scale=alt.Scale(domain=category_order, range=[color_mapping[c] for c in category_order])),
+        tooltip=["Subcategory", "Average Marks"]
+    )
 
-    text = chart.mark_text(dy=-10, fontSize=14, fontWeight="bold").encode(text=alt.Text("Average Marks:Q", format=".1f"))
+    # ✅ Bar chart
+    bars = base_chart.mark_bar()
 
-    return (chart + text)
+    # ✅ Text labels (values on top of bars)
+    text = base_chart.mark_text(dy=-10, fontSize=12, fontWeight="bold").encode(text=alt.Text("Average Marks:Q", format=".1f"))
+
+    # ✅ Final Chart (category names below bars, no null category)
+    final_chart = alt.layer(bars, text).properties(title="Average Marks by Category")
+
+    return final_chart
+
+
+
+
+
 
 
 # Chart: Subjects Failed Per Student
@@ -162,14 +286,48 @@ if uploaded_file:
     df = load_data(uploaded_file)
 
     # Dropdowns
+    # Define additional subjects for each department
+    extra_subjects = {
+        "Aeronautical": ['HM5503', 'EC5797', 'PR5791', 'EC5796', 'RP5591', 'EI5791', 'AU5791', 'ME5796', 'IT5794'],
+        "Automobile": ['GE5552', 'IT5794', 'GE5451', 'ITM503', 'ITM505', 'EC5796', 'EC5797', 'PR5791', 'RP5591', 'AE5795', 'ME5796'],
+        "ECE": ['HU5176', 'IT5794', 'MG5451', 'PH5202', 'EI5791', 'HU5172', 'HU5171', 'ME5796', 'HU5173', 'PR5791', 'HU5177', 'AU5791', 'AE5795', 'HU5174', 'RP5591'],
+        "AI": ['HU5173', 'HU5176', 'HU5171', 'HU5172', 'HU5177'],
+        "IT": ['HU5174', 'HU5177', 'HU5172', 'HU5173', 'HU5176', 'HU5171', 'EC5797', 'EC5796', 'AE5795', 'AU5791', 'EI5791', 'ME5796', 'PR5791', 'RP5591'],
+        "EI": ['HM5501', 'ME5796', 'RP5591', 'EC5796', 'EC5797', 'IT5794', 'PR5791', 'AE5795'],
+        "Mech": ['ITM503', 'ITM505', 'AU5791', 'AE5795', 'GE5152', 'MA5252'],
+        "Production": ['GE5551', 'HS5151', 'ITM503', 'ITM505', 'EEM504', 'EEM503', 'EI5791', 'EC5796', 'IT5794', 'AE5795'],
+        "Robo": ['EE5402', 'ITM503', 'ITM505', 'MA5158'],
+        "Rubber": ['HU5171', 'HU5176', 'HU5172', 'ITM503', 'ITM505', 'HU5177', 'HU5174', 'GE5451', 'ME5796', 'EC5797', 'AE5795', 'AU5791', 'EC5796']
+    }
+
+# Dropdowns
+    columns_to_keep = ["DEPNAME", "BRNAME", "SEM", "REGNO", "SUBCODE", "SUBTYPE", "SESMARK", "ESEM", "TOTMARK", "GRADE"]
+    df = df[columns_to_keep].copy()
     department_options = ["Overall", "Others (Open Elective)"] + sorted(df["DEPNAME"].unique())
     selected_department = st.selectbox("Select Department", department_options)
 
     if selected_department == "Others (Open Elective)":
         selected_branch = "All"  # Hide branch selection
         all_prefixes = tuple(DEPT_PREFIX.values())  # Get all department prefixes
-        df = df[~df["SUBCODE"].str.startswith(all_prefixes)]
-        subject_list = sorted(df["SUBCODE"].unique())  # Subjects only from Open Electives
+
+        # Filter out department subjects
+        df_others = df[~df["SUBCODE"].str.startswith(all_prefixes)].copy()
+        
+        # Get unique subjects from the filtered dataset
+        subject_list = sorted(df_others["SUBCODE"].unique())
+
+        # Add extra subjects from different departments
+        for subjects in extra_subjects.values():
+            subject_list.extend(subjects)
+
+        subject_list = sorted(set(subject_list))  # Remove duplicates and sort
+
+        # ✅ Re-add extra subjects to df_others if they exist in the original df
+        df_extra = df[df["SUBCODE"].isin(subject_list)]
+        df_others = pd.concat([df_others, df_extra]).drop_duplicates()
+
+        df = df_others  # Update df with the new filtered dataset
+ # Remove duplicates and sort
     else:
         selected_branch = st.selectbox("Select Branch", ["All"] + sorted(df[df["DEPNAME"] == selected_department]["BRNAME"].unique())) if selected_department != "Overall" else "All"
 
@@ -190,6 +348,7 @@ if uploaded_file:
 
     if selected_subject != "All":
         df = df[df["SUBCODE"] == selected_subject]
+
 
 
     # Generate Data for Charts
@@ -216,3 +375,16 @@ if uploaded_file:
 
     st.subheader("5. Grade Distribution")
     st.altair_chart(grade_distribution_chart(grade_dist_df), use_container_width=True)
+
+
+
+
+
+# Display Footer
+st.markdown("""
+    <div class="footer-container">
+        Dharshan S | 2021506018 | dharshans465@gmail.com
+    </div>
+""", unsafe_allow_html=True)
+
+
