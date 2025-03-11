@@ -59,9 +59,7 @@ anna_logo_base64 = encode_image(anna_logo_path)
 # Display Header
 st.markdown(f"""
     <div class="header-container">
-        <img class="header-logo" src="data:image/png;base64,{mit_logo_base64}" alt="MIT Logo">
         <div class="header-title">MADRAS INSTITUTE OF TECHNOLOGY</div>
-        <img class="header-logo" src="data:image/png;base64,{anna_logo_base64}" alt="Anna University Logo">
     </div>
 """, unsafe_allow_html=True)
 
