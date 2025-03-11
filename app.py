@@ -117,7 +117,7 @@ def avg_marks(df):
         "T": "Theory (40)",
         "P": "Practical/Project (60)",
         "L": "Lab (60)",
-        "S": "Single (100)",
+        "S": "Subject with no external (100)",
         "O": "Other/Open Elective"
     }
     internal_avg["Subcategory"] = internal_avg["SUBTYPE"].map(subcategory_labels)
@@ -195,13 +195,13 @@ def avg_marks_chart(df):
         "Theory (40)": "blue",
         "Practical/Project (60)": "lightblue",
         "Lab (60)": "cyan",
-        "Single (100)": "darkblue",
+        "Subject with no external (100)": "darkblue",
         "Other/Open Elective": "purple",  # Added for "O"
         "TOTMARK": "green"
     }
 
     # ✅ Ensure correct order: External → Internal (All Subcategories) → Total
-    category_order = ["ESEM", "Theory (40)", "Practical/Project (60)", "Lab (60)", "Single (100)", "Other/Open Elective", "TOTMARK"]
+    category_order = ["ESEM", "Theory (40)", "Practical/Project (60)", "Lab (60)", "Subject with no external (100)", "Other/Open Elective", "TOTMARK"]
 
     # ✅ Remove null/missing subcategories to prevent blank x-axis labels
     df = df[df["Subcategory"].notna() & df["Subcategory"].isin(category_order)]
